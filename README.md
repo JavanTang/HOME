@@ -4,7 +4,7 @@
 
 These are some init scripts, which are used to fast setup development environment.Currently, these have :
 
-**1**. User Management: Create new user and configure sudo permissions
+1. User Management: Create new user and configure sudo permissions
 2. SSH Configuration: Set SSH key and permissions for fast login
 3. Basic Environment: Install necessary packages (wget, git, curl, fish, etc.)
 4. Python Environment: Install Miniconda
