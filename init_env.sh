@@ -337,6 +337,42 @@ setup_proxy() {
 }
 
 # =================================================================
+# 将当前目录夹所有的脚本复制到用户/bin目录下，并且设置为可执行，放入环境变量
+# =================================================================
+
+setup_scripts() {
+    local username=$1
+    log_info "配置用户脚本环境..."
+
+    # 创建用户的bin目录
+    local bin_dir="/home/$username/bin"
+    mkdir -p $bin_dir
+
+    # 复制当前目录下的所有脚本到用户bin目录
+    cp -r ./* $bin_dir/
+
+    # 设置正确的权限
+    chmod -R +x $bin_dir/*
+    chown -R $username:$username $bin_dir
+
+    # 确保bin目录在PATH中
+    local fish_config="/home/$username/.config/fish/config.fish"
+    if ! grep -q "fish_add_path ~/bin" "$fish_config"; then
+        echo "fish_add_path ~/bin" >> "$fish_config"
+    fi
+
+    # 为bash用户也添加PATH配置
+    local bash_rc="/home/$username/.bashrc"
+    if [ -f "$bash_rc" ]; then
+        if ! grep -q "export PATH=\$HOME/bin:\$PATH" "$bash_rc"; then
+            echo 'export PATH=$HOME/bin:$PATH' >> "$bash_rc"
+        fi
+    fi
+
+    log_info "脚本环境配置完成"
+}
+
+# =================================================================
 # 主函数
 # =================================================================
 
