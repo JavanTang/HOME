@@ -285,7 +285,19 @@ EOL
 # =================================================================
 
 setup_proxy() {
-    local username=$1
+    local username="$1"
+    
+    # 验证参数
+    if [ -z "$username" ]; then
+        log_error "用户名参数为空"
+        return 1
+    fi
+    
+    if [ ! -d "/home/$username" ]; then
+        log_error "用户目录不存在: /home/$username"
+        return 1
+    fi
+    
     log_info "安装并配置代理..."
 
     read -p "请输入shadowsocksr-cli的setting-url: " setting_url
