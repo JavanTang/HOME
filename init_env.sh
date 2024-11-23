@@ -294,13 +294,17 @@ setup_proxy() {
     log_info "安装shadowsocksr-cli..."
     su - $username -c 'pip3 install git+https://gitee.com/JavanTang/ssr-command-client.git'
 
-    # 2. 配置SSR
+    # 添加 .local/bin 到 PATH
+    export PATH="/home/$username/.local/bin:$PATH"
+    su - $username -c 'export PATH=$HOME/.local/bin:$PATH'
+
+    # 2. 配置SSR (使用完整路径)
     log_info "配置SSR服务器..."
-    su - $username -c "shadowsocksr-cli --setting-url $setting_url"
+    su - $username -c "/home/$username/.local/bin/shadowsocksr-cli --setting-url $setting_url"
 
     # 3. 更新节点
     log_info "更新SSR节点..."
-    su - $username -c 'shadowsocksr-cli -u'
+    su - $username -c '/home/$username/.local/bin/shadowsocksr-cli -u'
 
     # 最大重试次数
     local max_retries=20
@@ -310,11 +314,11 @@ setup_proxy() {
     while [ $retries -lt $max_retries ]; do
         # 选择节点（轮流尝试不同节点）
         log_info "尝试连接节点 $((retries + 1))..."
-        su - $username -c "shadowsocksr-cli -s $((retries + 1))"
+        su - $username -c "/home/$username/.local/bin/shadowsocksr-cli -s $((retries + 1))"
 
         # 启动代理服务
         log_info "启动代理服务..."
-        su - $username -c 'shadowsocksr-cli -p 1080 --http-proxy start --http-proxy-port 7890'
+        su - $username -c '/home/$username/.local/bin/shadowsocksr-cli -p 1080 --http-proxy start --http-proxy-port 7890'
 
         # 验证代理状态
         log_info "验证代理状态..."
