@@ -181,9 +181,21 @@ EOF
 
 setup_miniconda() {
     local username=$1
-    log_info "安装Miniconda..."
-
     local miniconda_path="/home/$username/miniconda3"
+
+    # 检查 miniconda 是否已经存在
+    if [ -d "$miniconda_path" ]; then
+        log_warn "Miniconda 已经安装在 $miniconda_path"
+        read -p "是否重新安装? (y/n): " reinstall
+        if [[ $reinstall != "y" ]]; then
+            log_info "跳过 Miniconda 安装"
+            return
+        fi
+        log_info "将删除现有安装..."
+        rm -rf "$miniconda_path"
+    fi
+
+    log_info "安装Miniconda..."
     local arch=$(uname -m)
     local miniconda_url
 
