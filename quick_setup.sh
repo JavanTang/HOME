@@ -31,12 +31,23 @@ USER_NAME="JavanTang"
 REPO_NAME="HOME"
 
 # 下载必要的脚本
-echo "下载必要的脚本..."
+echo "检查和下载必要的脚本..."
 for script in "init_env.sh" "model_download_by_conf.sh"; do
-    if ! curl -fsSL "https://raw.githubusercontent.com/${USER_NAME}/${REPO_NAME}/main/${script}" -o "$INSTALL_DIR/${script}"; then
-        echo "错误：下载 ${script} 失败"
-        exit 1
+    # 首先检查当前目录
+    if [ -f "./${script}" ]; then
+        echo "使用当前目录的 ${script}"
+        cp "./${script}" "$INSTALL_DIR/${script}"
+    # 如果当前目录没有，则从 GitHub 下载
+    else
+        echo "从 GitHub 下载 ${script}..."
+        if ! curl -fsSL "https://raw.githubusercontent.com/${USER_NAME}/${REPO_NAME}/main/${script}" -o "$INSTALL_DIR/${script}"; then
+            echo "错误：下载 ${script} 失败"
+            exit 1
+        fi
     fi
+    
+    # 确保脚本有执行权限
+    chmod +x "$INSTALL_DIR/${script}"
 done
 
 # 创建必要的目录
