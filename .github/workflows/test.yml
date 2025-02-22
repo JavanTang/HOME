@@ -58,10 +58,37 @@ jobs:
             test -f /root/id_rsa.pub
           "
           
-          # 测试2：运行初始化脚本
-          echo "=== 测试脚本运行 ==="
+          # 测试2：运行初始化脚本并验证结果
+          echo "=== 测试脚本运行和验证配置 ==="
           docker run --rm init-env-test bash -c "
+            # 运行初始化脚本
             cd /root && \
             chmod +x init_env.sh && \
-            ./init_env.sh testuser testpass123
+            ./init_env.sh testuser testpass123 && \
+            
+            echo '=== 验证用户创建和切换 ===' && \
+            # 验证用户是否存在
+            id testuser && \
+            # 验证用户密码
+            echo 'testpass123' | su - testuser -c 'echo 用户登录成功' && \
+            
+            echo '=== 验证SSH配置 ===' && \
+            # 检查SSH目录权限
+            su - testuser -c 'test -d ~/.ssh && \
+            test -f ~/.ssh/authorized_keys && \
+            stat -c %a ~/.ssh | grep -q 700 && \
+            stat -c %a ~/.ssh/authorized_keys | grep -q 600' && \
+            
+            echo '=== 验证Python环境 ===' && \
+            # 检查Miniconda安装
+            su - testuser -c 'test -d ~/miniconda3 && \
+            test -f ~/miniconda3/bin/conda && \
+            ~/miniconda3/bin/conda --version' && \
+            
+            echo '=== 验证Shell配置 ===' && \
+            # 验证默认shell是否为fish
+            grep -q 'fish$' /etc/passwd && \
+            # 检查fish配置
+            su - testuser -c 'test -f ~/.config/fish/config.fish && \
+            fish -c \"type fish_greeting\"'
           "
