@@ -11,6 +11,98 @@
 # 6. 代理配置: 安装配置shadowsocksr-cli
 # =================================================================
 
+# 加载环境变量
+load_env() {
+    # 如果存在.env文件，从文件加载
+    if [ -f .env ]; then
+        log_info "发现.env配置文件，尝试加载..."
+        export $(cat .env | grep -v '^#' | xargs)
+    fi
+
+    # 验证必要的环境变量，如果不存在则提示输入
+    required_vars=(
+        "TEST_USERNAME"
+        "TEST_PASSWORD"
+        "SSR_SETTING_URL"
+        "SSR_PORT"
+        "HTTP_PROXY_PORT"
+    )
+
+    for var in "${required_vars[@]}"; do
+        if [ -z "${!var}" ]; then
+            log_info "环境变量 $var 未设置，请手动输入:"
+            case $var in
+                "TEST_PASSWORD")
+                    # 密码不显示输入内容
+                    read -s -p "请输入 $var: " value
+                    echo  # 换行
+                    ;;
+                "SSR_PORT")
+                    read -p "请输入SSR端口 (默认: 1080): " value
+                    value=${value:-1080}
+                    ;;
+                "HTTP_PROXY_PORT")
+                    read -p "请输入HTTP代理端口 (默认: 7890): " value
+                    value=${value:-7890}
+                    ;;
+                *)
+                    read -p "请输入 $var: " value
+                    ;;
+            esac
+            export $var="$value"
+        fi
+    done
+
+    # 处理SSH公钥
+    if [ -z "$SSH_PUBLIC_KEY_PATH" ]; then
+        log_info "SSH密钥配置"
+        echo "请选择SSH密钥配置方式:"
+        echo "1. 直接输入密钥"
+        echo "2. 从文件读取密钥"
+        read -p "请选择 (1-2): " choice
+
+        case $choice in
+            1)
+                echo "请输入SSH公钥 (以ssh-rsa开头的完整密钥):"
+                read -r SSH_KEY
+                ;;
+            2)
+                read -p "请输入SSH公钥文件路径: " SSH_PUBLIC_KEY_PATH
+                if [ -f "$SSH_PUBLIC_KEY_PATH" ]; then
+                    SSH_KEY=$(cat "$SSH_PUBLIC_KEY_PATH")
+                else
+                    log_error "SSH公钥文件不存在: $SSH_PUBLIC_KEY_PATH"
+                    exit 1
+                fi
+                ;;
+            *)
+                log_error "无效的选择"
+                exit 1
+                ;;
+        esac
+    else
+        if [ -f "$SSH_PUBLIC_KEY_PATH" ]; then
+            SSH_KEY=$(cat "$SSH_PUBLIC_KEY_PATH")
+        else
+            log_error "SSH公钥文件不存在: $SSH_PUBLIC_KEY_PATH"
+            exit 1
+        fi
+    fi
+
+    # 验证SSH密钥格式
+    if ! echo "$SSH_KEY" | grep -q "^ssh-rsa "; then
+        log_error "无效的SSH密钥格式"
+        exit 1
+    fi
+
+    # 显示配置信息
+    log_info "当前配置信息:"
+    log_info "用户名: $TEST_USERNAME"
+    log_info "SSR设置URL: $SSR_SETTING_URL"
+    log_info "SSR端口: ${SSR_PORT:-1080}"
+    log_info "HTTP代理端口: ${HTTP_PROXY_PORT:-7890}"
+}
+
 # 颜色定义
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -137,10 +229,70 @@ setup_ssh() {
 # 基础软件安装
 # =================================================================
 
+# 配置apt源
+setup_apt_source() {
+    log_info "配置apt清华源..."
+    # 备份原始源文件
+    cp /etc/apt/sources.list /etc/apt/sources.list.bak
+    
+    # 检测系统架构
+    local arch=$(dpkg --print-architecture)
+    log_info "检测到系统架构: $arch"
+    
+    # 根据架构配置不同的源
+    if [ "$arch" = "arm64" ] || [ "$arch" = "aarch64" ]; then
+        log_info "配置ARM架构清华源..."
+        cat > /etc/apt/sources.list << EOF
+deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu-ports/ jammy main restricted universe multiverse
+deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu-ports/ jammy-updates main restricted universe multiverse
+deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu-ports/ jammy-backports main restricted universe multiverse
+deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu-ports/ jammy-security main restricted universe multiverse
+EOF
+    else
+        log_info "配置x86架构清华源..."
+        cat > /etc/apt/sources.list << EOF
+deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu/ jammy main restricted universe multiverse
+deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu/ jammy-updates main restricted universe multiverse
+deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu/ jammy-backports main restricted universe multiverse
+deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu/ jammy-security main restricted universe multiverse
+EOF
+    fi
+    
+    log_info "apt源配置完成"
+}
+
 install_basic_packages() {
-    log_info "安装必要的软件包..."
-    apt-get update
-    apt-get install -y wget git curl fish sudo htop python3-pip
+    # 首先配置apt源
+    setup_apt_source
+
+    log_info "检查必要的软件包..."
+    
+    # 检查必要的命令是否存在
+    required_commands=(
+        "wget"
+        "git"
+        "curl"
+        "fish"
+        "sudo"
+        "htop"
+        "pip3"
+    )
+
+    missing_commands=()
+    for cmd in "${required_commands[@]}"; do
+        if ! command -v $cmd &> /dev/null; then
+            missing_commands+=($cmd)
+        fi
+    done
+
+    # 如果有缺失的命令，尝试安装
+    if [ ${#missing_commands[@]} -ne 0 ]; then
+        log_warn "发现缺失的命令: ${missing_commands[*]}"
+        log_info "尝试安装缺失的包..."
+        apt-get update && apt-get install -y ${missing_commands[@]}
+    else
+        log_info "所有必要的软件包都已安装"
+    fi
 
     # 确保 sudo 配置正确
     if [ ! -f "/etc/sudoers.d/nopasswd" ]; then
@@ -202,7 +354,7 @@ setup_miniconda() {
     if [ "$arch" = "x86_64" ]; then
         miniconda_url="https://mirrors.tuna.tsinghua.edu.cn/anaconda/miniconda/Miniconda3-py39_4.9.2-Linux-x86_64.sh"
     elif [ "$arch" = "aarch64" ]; then
-        miniconda_url="https://mirrors.tuna.tsinghua.edu.cn/anaconda/miniconda/Miniconda3-py39_4.9.2-Linux-aarch64.sh"
+        miniconda_url="https://repo.anaconda.com/miniconda/Miniconda3-py39_4.9.2-Linux-aarch64.sh"
     else
         log_error "不支持的架构: $arch"
         exit 1
@@ -300,23 +452,17 @@ setup_proxy() {
     
     log_info "安装并配置代理..."
 
-    read -p "请输入shadowsocksr-cli的setting-url: " setting_url
-
     # 1. 安装shadowsocksr-cli (使用gitee源)
     log_info "安装shadowsocksr-cli..."
-    su - $username -c 'pip3 install git+https://gitee.com/JavanTang/ssr-command-client.git'
+    pip3 install --break-system-packages git+https://gitee.com/JavanTang/ssr-command-client.git
 
-    # 添加 .local/bin 到 PATH
-    export PATH="/home/$username/.local/bin:$PATH"
-    su - $username -c 'export PATH=$HOME/.local/bin:$PATH'
-
-    # 2. 配置SSR (使用完整路径)
+    # 2. 配置SSR
     log_info "配置SSR服务器..."
-    su - $username -c "/home/$username/.local/bin/shadowsocksr-cli --setting-url $setting_url"
+    shadowsocksr-cli --setting-url $SSR_SETTING_URL
 
     # 3. 更新节点
     log_info "更新SSR节点..."
-    su - $username -c '/home/$username/.local/bin/shadowsocksr-cli -u'
+    shadowsocksr-cli -u
 
     # 最大重试次数
     local max_retries=20
@@ -326,28 +472,51 @@ setup_proxy() {
     while [ $retries -lt $max_retries ]; do
         # 选择节点（轮流尝试不同节点）
         log_info "尝试连接节点 $((retries + 1))..."
-        su - $username -c "/home/$username/.local/bin/shadowsocksr-cli -s $((retries + 1))"
+        shadowsocksr-cli -s $((retries + 1))
 
         # 启动代理服务
         log_info "启动代理服务..."
-        su - $username -c '/home/$username/.local/bin/shadowsocksr-cli -p 1080 --http-proxy start --http-proxy-port 7890'
+        log_info "使用端口: SSR端口=${SSR_PORT:-1080}, HTTP代理端口=${HTTP_PROXY_PORT:-7890}"
+        shadowsocksr-cli -p ${SSR_PORT:-1080} --http-proxy start --http-proxy-port ${HTTP_PROXY_PORT:-7890}
 
         # 验证代理状态
         log_info "验证代理状态..."
-        sleep 5  # 等待服务启动
+        log_info "等待5秒让服务完全启动..."
+        sleep 5
 
-        if su - $username -c 'curl -s https://www.google.com' > /dev/null; then
+        # 测试连接
+        log_info "测试 Google 连接..."
+        local curl_output
+        local curl_exit_code
+        curl_output=$(curl -v --connect-timeout 10 -s https://www.google.com 2>&1)
+        curl_exit_code=$?
+
+        if [ $curl_exit_code -eq 0 ]; then
             log_info "代理设置成功，当前节点: $(($retries + 1))"
+            log_info "成功连接到 Google"
             success=true
             break
         else
-            log_warn "节点 $(($retries + 1)) 未正常工作，尝试下一个节点..."
+            log_warn "节点 $(($retries + 1)) 连接失败"
+            log_warn "curl 退出码: $curl_exit_code"
+            log_warn "curl 输出: $curl_output"
+            log_info "尝试停止当前代理服务..."
+            shadowsocksr-cli --http-proxy stop
+            shadowsocksr-cli -d stop
             retries=$((retries + 1))
+            if [ $retries -lt $max_retries ]; then
+                log_info "等待3秒后尝试下一个节点..."
+                sleep 3
+            fi
         fi
     done
 
     if [ "$success" = false ]; then
-        log_error "代理配置失败，请手动检查设置。"
+        log_error "所有节点都连接失败，请检查以下几点："
+        log_error "1. 确认订阅地址是否有效"
+        log_error "2. 检查系统时间是否正确"
+        log_error "3. 检查防火墙设置"
+        log_error "4. 尝试手动运行 shadowsocksr-cli -l 查看可用节点"
         exit 1
     fi
 }
@@ -399,24 +568,25 @@ main() {
         exit 1
     fi
 
-    # 获取用户输入
-    get_user_input "$@"
+    # 加载环境变量
+    load_env
+
+    # 如果命令行参数存在，使用命令行参数，否则使用环境变量
+    USERNAME=${1:-$TEST_USERNAME}
+    PASSWORD=${2:-$TEST_PASSWORD}
 
     # 执行配置
     # 1. 首先创建用户和基础环境
     setup_user $USERNAME $PASSWORD
 
-    # 2. 获取SSH密钥
-    get_ssh_key
-
-    # 3. 配置SSH
+    # 2. 配置SSH（不再需要get_ssh_key，因为已经从环境变量加载）
     setup_ssh $USERNAME
     install_basic_packages
 
-    # 4. 配置pip源
+    # 3. 配置pip源
     setup_pip $USERNAME
 
-    # 5. 安装并配置代理
+    # 4. 安装并配置代理
     setup_proxy $USERNAME
 
     # 等待代理服务启动
@@ -424,32 +594,43 @@ main() {
     sleep 10
 
     # 配置代理环境变量
-    export ALL_PROXY=socks5://127.0.0.1:1080
-    export HTTPS_PROXY=http://127.0.0.1:7890
+    export ALL_PROXY=socks5://127.0.0.1:${SSR_PORT:-1080}
+    export HTTPS_PROXY=http://127.0.0.1:${HTTP_PROXY_PORT:-7890}
+    log_info "设置代理环境变量:"
+    log_info "ALL_PROXY=$ALL_PROXY"
+    log_info "HTTPS_PROXY=$HTTPS_PROXY"
 
     log_info "正在测试代理连接..."
-    if curl -s https://www.google.com > /dev/null; then
+    local curl_output
+    local curl_exit_code
+    curl_output=$(curl -v --connect-timeout 10 -s https://www.google.com 2>&1)
+    curl_exit_code=$?
+
+    if [ $curl_exit_code -eq 0 ]; then
         log_info "代理连接成功!"
+        log_info "成功访问 Google"
     else
         log_warn "代理可能未正常工作，但将继续安装..."
+        log_warn "curl 退出码: $curl_exit_code"
+        log_warn "curl 输出: $curl_output"
         log_warn "如果后续步骤失败，请手动配置代理后重试"
     fi
 
-    # 6. 安装其他环境
-    setup_miniconda $USERNAME
+    # 5. 安装其他环境
+    setup_miniconda $USERNAME  
     setup_fish $USERNAME
 
     # 完成提示
     log_info "环境配置完成！请注意以下事项："
     echo "1. 请重新登录以使修改生效"
     echo "2. 配置SSR代理请运行："
-    echo "   shadowsocksr-cli --setting-url $setting_url"
+    echo "   shadowsocksr-cli --setting-url $SSR_SETTING_URL"
     echo "   shadowsocksr-cli -u"
     echo "   shadowsocksr-cli -l"
     echo "3. 选择台湾节点运行："
     echo "   shadowsocksr-cli -s 18"
     echo "4. 启动代理运行："
-    echo "   shadowsocksr-cli -p 1080 --http-proxy start --http-proxy-port 7890"
+    echo "   shadowsocksr-cli -p ${SSR_PORT:-1080} --http-proxy start --http-proxy-port ${HTTP_PROXY_PORT:-7890}"
 }
 
 # 执行主函数
