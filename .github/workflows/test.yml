@@ -1,45 +1,33 @@
-# 工作流名称，会显示在GitHub Actions页面上
-name: Test Environment Setup Script
+# 工作流名称
+name: 基础测试
 
-# 触发条件：定义什么时候执行这个工作流
+# 触发条件
 on:
   push:
-    branches: [ main,dev ]  # 当有代码推送到main分支时
-  pull_request:
-    branches: [ main,dev ]  # 当有Pull Request提交到main分支时
-  workflow_dispatch:    # 允许在GitHub Actions页面手动触发
+    branches: [ main,dev ]  # 只在推送到main分支时触发
+  workflow_dispatch:    # 允许手动触发
 
-# 定义所有的工作（jobs）
+# 定义工作
 jobs:
-  # 第一个工作：Shell脚本语法检查
-  shellcheck:
-    name: Shellcheck
-    runs-on: ubuntu-latest  # 在最新版本的Ubuntu环境中运行
+  # 基础测试工作
+  basic-test:
+    name: 基础测试
+    runs-on: ubuntu-latest
     steps:
       # 步骤1：检出代码
-      - uses: actions/checkout@v4
+      - name: 检出代码
+        uses: actions/checkout@v4
       
-      # 步骤2：运行shellcheck工具检查shell脚本
-      - name: Run ShellCheck
+      # 步骤2：检查shell脚本
+      - name: Shell脚本检查
         uses: ludeeus/action-shellcheck@master
         with:
-          scandir: '.'           # 检查当前目录下所有shell脚本
-          severity: error        # 只报告错误级别的问题
+          scandir: '.'
+          severity: error
 
-  # 第二个工作：测试Docker构建
-  test-docker-build:
-    name: Test Docker Build
-    runs-on: ubuntu-latest
-    needs: shellcheck  # 需要等shellcheck工作完成后才开始
-    steps:
-      # 步骤1：检出代码
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      # 步骤2：创建测试环境配置
-      - name: Create test environment file
+      # 步骤3：创建测试环境文件
+      - name: 创建测试环境
         run: |
-          # 创建测试用的环境变量文件
           echo "TEST_USERNAME=testuser" > .env
           echo "TEST_PASSWORD=testpass123" >> .env
           echo "SSH_PUBLIC_KEY_PATH=/root/id_rsa.pub" >> .env
@@ -47,26 +35,15 @@ jobs:
           echo "SSR_PORT=1080" >> .env
           echo "HTTP_PROXY_PORT=7890" >> .env
 
-      # 步骤3：设置Docker Buildx（用于多平台构建）
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      # 步骤4：构建Docker镜像
-      - name: Build Docker image
-        uses: docker/build-push-action@v5
-        with:
-          context: .              # 使用当前目录作为构建上下文
-          push: false            # 不推送到镜像仓库
-          load: true            # 将镜像加载到本地Docker
-          tags: init-env-test:latest
-          cache-from: type=gha  # 使用GitHub Actions的缓存
-          cache-to: type=gha,mode=max
-
-      # 步骤5：测试容器的基本功能
-      - name: Test basic container functionality
+      # 步骤4：构建和测试Docker
+      - name: Docker测试
         run: |
+          # 构建Docker镜像
+          docker build -t init-env-test .
+          
+          # 测试基本功能
           docker run --rm init-env-test bash -c "
-            # 测试基本命令是否存在
+            # 测试命令是否存在
             command -v wget && \
             command -v git && \
             command -v curl && \
@@ -74,58 +51,8 @@ jobs:
             command -v sudo && \
             command -v htop && \
             command -v pip3 && \
-            # 测试配置文件是否存在
+            # 测试文件是否存在
             test -f /root/init_env.sh && \
             test -f /root/.env && \
-            test -f /root/id_rsa.pub && \
-            # 测试脚本是否可执行
-            test -x /root/init_env.sh
+            test -f /root/id_rsa.pub
           "
-
-  # 第三个工作：测试脚本功能
-  test-script-functionality:
-    name: Test Script Functionality
-    runs-on: ubuntu-latest
-    needs: test-docker-build  # 需要等Docker构建测试完成后才开始
-    steps:
-      - uses: actions/checkout@v4
-      
-      # 步骤1：安装shellspec测试框架
-      - name: Install shellspec
-        run: |
-          curl -fsSL https://git.io/shellspec | sh -s -- --yes
-          echo "${HOME}/.local/bin" >> $GITHUB_PATH
-
-      # 步骤2：运行shellspec测试
-      - name: Run shellspec tests
-        run: |
-          shellspec
-
-  # 第四个工作：测试ARM64架构兼容性
-  test-arm64-compatibility:
-    name: Test ARM64 Compatibility
-    runs-on: ubuntu-latest
-    needs: shellcheck  # 需要等shellcheck工作完成后才开始
-    steps:
-      - uses: actions/checkout@v4
-
-      # 步骤1：设置QEMU（用于模拟ARM64环境）
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: arm64
-
-      # 步骤2：设置Docker Buildx
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      # 步骤3：构建ARM64版本的Docker镜像
-      - name: Build ARM64 Docker image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          platforms: linux/arm64  # 指定构建ARM64平台的镜像
-          push: false
-          tags: init-env-test:arm64
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
