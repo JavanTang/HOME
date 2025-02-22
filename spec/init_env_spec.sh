@@ -1,3 +1,4 @@
+#shellcheck shell=sh
 # shellspec是一个BDD风格的shell脚本测试框架
 # 使用类似于RSpec的语法来描述测试用例
 
