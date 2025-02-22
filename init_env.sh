@@ -280,8 +280,8 @@ install_basic_packages() {
 
     missing_commands=()
     for cmd in "${required_commands[@]}"; do
-        if ! command -v $cmd &> /dev/null; then
-            missing_commands+=($cmd)
+        if ! command -v "$cmd" &> /dev/null; then
+            missing_commands+=("$cmd")
         fi
     done
 
@@ -289,7 +289,7 @@ install_basic_packages() {
     if [ ${#missing_commands[@]} -ne 0 ]; then
         log_warn "发现缺失的命令: ${missing_commands[*]}"
         log_info "尝试安装缺失的包..."
-        apt-get update && apt-get install -y ${missing_commands[@]}
+        apt-get update && apt-get install -y "${missing_commands[@]}"
     else
         log_info "所有必要的软件包都已安装"
     fi
