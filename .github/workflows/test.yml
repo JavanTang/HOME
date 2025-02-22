@@ -41,7 +41,8 @@ jobs:
           # 构建Docker镜像
           docker build -t init-env-test .
           
-          # 测试基本功能
+          # 测试1：检查基本命令和文件
+          echo "=== 测试基本命令和文件 ==="
           docker run --rm init-env-test bash -c "
             # 测试命令是否存在
             command -v wget && \
@@ -55,4 +56,12 @@ jobs:
             test -f /root/init_env.sh && \
             test -f /root/.env && \
             test -f /root/id_rsa.pub
+          "
+          
+          # 测试2：运行初始化脚本
+          echo "=== 测试脚本运行 ==="
+          docker run --rm init-env-test bash -c "
+            cd /root && \
+            chmod +x init_env.sh && \
+            ./init_env.sh testuser testpass123
           "
