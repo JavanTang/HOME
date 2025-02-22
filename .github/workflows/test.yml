@@ -4,9 +4,9 @@ name: Test Environment Setup Script
 # 触发条件：定义什么时候执行这个工作流
 on:
   push:
-    branches: [ main ]  # 当有代码推送到main分支时
+    branches: [ main,dev ]  # 当有代码推送到main分支时
   pull_request:
-    branches: [ main ]  # 当有Pull Request提交到main分支时
+    branches: [ main,dev ]  # 当有Pull Request提交到main分支时
   workflow_dispatch:    # 允许在GitHub Actions页面手动触发
 
 # 定义所有的工作（jobs）
