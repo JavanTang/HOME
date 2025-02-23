@@ -9,24 +9,64 @@ on:
 
 # 定义工作
 jobs:
-  # 基础测试工作
-  basic-test:
-    name: 基础测试
+  # 语法检查
+  lint:
+    name: 脚本语法检查
     runs-on: ubuntu-latest
     steps:
-      # 步骤1：检出代码
       - name: 检出代码
         uses: actions/checkout@v4
       
-      # 步骤2：检查shell脚本
       - name: Shell脚本检查
         uses: ludeeus/action-shellcheck@master
         with:
           scandir: '.'
           severity: error
 
-      # 步骤3：创建测试环境文件
-      - name: 创建测试环境
+  # 基础环境测试
+  test-environment:
+    name: 基础环境测试
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 构建Docker镜像
+        run: docker build -t init-env-test .
+
+      - name: 检查基础命令
+        run: |
+          echo "=== 检查基础命令 ==="
+          docker run --rm init-env-test bash -c "
+            command -v wget && \
+            command -v git && \
+            command -v curl && \
+            command -v fish && \
+            command -v sudo && \
+            command -v htop && \
+            command -v pip3
+          "
+
+      - name: 检查基础文件
+        run: |
+          echo "=== 检查基础文件 ==="
+          docker run --rm init-env-test bash -c "
+            test -f /root/init_env.sh && \
+            test -f /root/.env && \
+            test -f /root/id_rsa.pub
+          "
+
+  # 功能测试
+  test-functionality:
+    name: 功能测试
+    needs: test-environment
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 准备测试环境
         run: |
           echo "TEST_USERNAME=testuser" > .env
           echo "TEST_PASSWORD=testpass123" >> .env
@@ -34,61 +74,49 @@ jobs:
           echo "SSR_SETTING_URL=https://example.com/test" >> .env
           echo "SSR_PORT=1080" >> .env
           echo "HTTP_PROXY_PORT=7890" >> .env
-
-      # 步骤4：构建和测试Docker
-      - name: Docker测试
-        run: |
-          # 构建Docker镜像
           docker build -t init-env-test .
-          
-          # 测试1：检查基本命令和文件
-          echo "=== 测试基本命令和文件 ==="
+
+      - name: 测试用户创建和认证
+        run: |
           docker run --rm init-env-test bash -c "
-            # 测试命令是否存在
-            command -v wget && \
-            command -v git && \
-            command -v curl && \
-            command -v fish && \
-            command -v sudo && \
-            command -v htop && \
-            command -v pip3 && \
-            # 测试文件是否存在
-            test -f /root/init_env.sh && \
-            test -f /root/.env && \
-            test -f /root/id_rsa.pub
-          "
-          
-          # 测试2：运行初始化脚本并验证结果
-          echo "=== 测试脚本运行和验证配置 ==="
-          docker run --rm init-env-test bash -c "
-            # 运行初始化脚本
             cd /root && \
             chmod +x init_env.sh && \
             ./init_env.sh testuser testpass123 && \
-            
-            echo '=== 验证用户创建和切换 ===' && \
-            # 验证用户是否存在
+            echo '=== 验证用户创建 ===' && \
             id testuser && \
-            # 验证用户密码
-            echo 'testpass123' | su - testuser -c 'echo 用户登录成功' && \
-            
+            echo 'testpass123' | su - testuser -c 'echo \"用户登录成功\"'
+          "
+
+      - name: 测试SSH配置
+        run: |
+          docker run --rm init-env-test bash -c "
             echo '=== 验证SSH配置 ===' && \
-            # 检查SSH目录权限
-            su - testuser -c 'test -d ~/.ssh && \
-            test -f ~/.ssh/authorized_keys && \
-            stat -c %a ~/.ssh | grep -q 700 && \
-            stat -c %a ~/.ssh/authorized_keys | grep -q 600' && \
-            
+            su - testuser -c '
+              test -d ~/.ssh && \
+              test -f ~/.ssh/authorized_keys && \
+              stat -c %a ~/.ssh | grep -q 700 && \
+              stat -c %a ~/.ssh/authorized_keys | grep -q 600
+            '
+          "
+
+      - name: 测试Python环境
+        run: |
+          docker run --rm init-env-test bash -c "
             echo '=== 验证Python环境 ===' && \
-            # 检查Miniconda安装
-            su - testuser -c 'test -d ~/miniconda3 && \
-            test -f ~/miniconda3/bin/conda && \
-            ~/miniconda3/bin/conda --version' && \
-            
+            su - testuser -c '
+              test -d ~/miniconda3 && \
+              test -f ~/miniconda3/bin/conda && \
+              ~/miniconda3/bin/conda --version
+            '
+          "
+
+      - name: 测试Shell配置
+        run: |
+          docker run --rm init-env-test bash -c "
             echo '=== 验证Shell配置 ===' && \
-            # 验证默认shell是否为fish
             grep -q 'fish$' /etc/passwd && \
-            # 检查fish配置
-            su - testuser -c 'test -f ~/.config/fish/config.fish && \
-            fish -c \"type fish_greeting\"'
+            su - testuser -c '
+              test -f ~/.config/fish/config.fish && \
+              fish -c \"type fish_greeting\"
+            '
           "
