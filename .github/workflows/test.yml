@@ -32,6 +32,20 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v4
 
+      - name: 准备测试文件
+        run: |
+          # 创建测试用的环境变量文件
+          echo "TEST_USERNAME=testuser" > .env
+          echo "TEST_PASSWORD=testpass123" >> .env
+          echo "SSH_PUBLIC_KEY_PATH=/root/id_rsa.pub" >> .env
+          echo "SSR_SETTING_URL=https://example.com/test" >> .env
+          echo "SSR_PORT=1080" >> .env
+          echo "HTTP_PROXY_PORT=7890" >> .env
+
+          # 生成测试用的SSH密钥
+          ssh-keygen -t rsa -f id_rsa -N ""
+          mv id_rsa.pub .
+
       - name: 构建Docker镜像
         run: docker build -t init-env-test .
 
@@ -68,12 +82,19 @@ jobs:
 
       - name: 准备测试环境
         run: |
+          # 创建测试用的环境变量文件
           echo "TEST_USERNAME=testuser" > .env
           echo "TEST_PASSWORD=testpass123" >> .env
           echo "SSH_PUBLIC_KEY_PATH=/root/id_rsa.pub" >> .env
           echo "SSR_SETTING_URL=https://example.com/test" >> .env
           echo "SSR_PORT=1080" >> .env
           echo "HTTP_PROXY_PORT=7890" >> .env
+
+          # 生成测试用的SSH密钥
+          ssh-keygen -t rsa -f id_rsa -N ""
+          mv id_rsa.pub .
+
+          # 构建Docker镜像
           docker build -t init-env-test .
 
       - name: 测试用户创建和认证
